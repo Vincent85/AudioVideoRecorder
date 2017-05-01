@@ -19,6 +19,7 @@ import java.util.List;
 public class CameraManager {
 
     public static final String TAG = "CameraManager";
+    public static final boolean DEBUG = true;
 
     private static CameraManager sInstance;
 
@@ -26,6 +27,9 @@ public class CameraManager {
 
     private Camera mCamera;
     private int mCameraId;
+
+    private Camera.Size mCurrentPreviewSize;
+    private SurfaceHolder mHolder;
 
     private CameraManager(Context context) {
         mContext = context;
@@ -62,6 +66,7 @@ public class CameraManager {
 
         try {
             mCamera.setPreviewDisplay(holder);
+            mHolder = holder;
         } catch (IOException e) {
             Log.e(TAG, "setPreviewDisplay error " + e.getLocalizedMessage());
         }
@@ -72,24 +77,44 @@ public class CameraManager {
             mCamera.startPreview();
         }
     }
+
+    public void switchCamera() {
+        close();
+        if (mCameraId == Camera.CameraInfo.CAMERA_FACING_FRONT) {
+            mCameraId = Camera.CameraInfo.CAMERA_FACING_BACK;
+            mCamera = openCamera(mCameraId);
+        }else {
+            mCameraId = Camera.CameraInfo.CAMERA_FACING_FRONT;
+            mCamera = openCamera(mCameraId);
+        }
+        initCamera(mCurrentPreviewSize.width, mCurrentPreviewSize.height,mHolder);
+        startPreview();
+    }
+
     public void close() {
         if (null != mCamera) {
             mCamera.stopPreview();
+            mCamera.release();
             mCamera = null;
         }
+    }
+
+    private Camera openCamera(int cameraId) {
+        return Camera.open(cameraId);
     }
 
     private void initCameraParameter(int width,int height) {
         Camera.Parameters parameters = mCamera.getParameters();
 
-        Camera.Size previewSize = getPreviewSize(parameters, width, height);
+        Camera.Size previewSize = getBestPreviewSize(parameters, width, height);
+        mCurrentPreviewSize = previewSize;
         parameters.setPreviewSize(previewSize.width, previewSize.height);
 
         setCameraPreviewRotation();
         mCamera.setParameters(parameters);
     }
 
-    private Camera.Size getPreviewSize(Camera.Parameters parameters,int width, int height) {
+    private Camera.Size getBestPreviewSize(Camera.Parameters parameters, int width, int height) {
         List<Camera.Size> supportedSizes =  parameters.getSupportedPreviewSizes();
         Camera.Size result = null;
         for (Camera.Size size : supportedSizes) {
@@ -102,6 +127,9 @@ public class CameraManager {
                     result = size;
                 }
             }
+        }
+        if (DEBUG) {
+            Log.d(TAG, "bestPreviewSize width = " + result.width + ",height = " + result.height);
         }
         return result;
     }
@@ -121,7 +149,7 @@ public class CameraManager {
             case Surface.ROTATION_270: degree = 270; break;
         }
 
-        int result = 0;
+        int result;
         if (cameraInfo.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
             result = (cameraInfo.orientation + degree) % 360;
             result = (360 - result) % 360;

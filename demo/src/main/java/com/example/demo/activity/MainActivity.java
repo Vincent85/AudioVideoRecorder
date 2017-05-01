@@ -5,6 +5,8 @@ import android.os.Bundle;
 import android.util.Log;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
+import android.view.View;
+import android.widget.Button;
 
 import com.example.demo.R;
 import com.example.vin19.audiovideo.camera.CameraManager;
@@ -13,13 +15,16 @@ import com.example.vin19.audiovideo.camera.CameraManager;
  * Created by vin19 on 2017/4/30.
  */
 
-public class MainActivity extends Activity implements SurfaceHolder.Callback {
+public class MainActivity extends Activity implements SurfaceHolder.Callback,View.OnClickListener {
 
     public static final String TAG = "MainActivity";
     public static final boolean DEBUG = true;
 
     SurfaceView mPreviewSfv;
     SurfaceHolder mHolder;
+
+    Button mSwitchBtn;
+
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -29,6 +34,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         mPreviewSfv = (SurfaceView) findViewById(R.id.prv_sfv);
         mHolder = mPreviewSfv.getHolder();
         mHolder.addCallback(this);
+
+        mSwitchBtn = (Button) findViewById(R.id.switch_btn);
+        mSwitchBtn.setOnClickListener(this);
     }
 
     @Override
@@ -60,5 +68,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     public void onDestroy() {
         mHolder.removeCallback(this);
         super.onDestroy();
+    }
+
+    @Override
+    public void onClick(View v) {
+        if (v.getId() == R.id.switch_btn) {
+            CameraManager.getInstance(getApplicationContext()).switchCamera();
+        }
     }
 }
