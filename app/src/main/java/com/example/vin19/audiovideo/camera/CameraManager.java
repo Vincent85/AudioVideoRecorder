@@ -1,6 +1,7 @@
 package com.example.vin19.audiovideo.camera;
 
 import android.content.Context;
+import android.graphics.PixelFormat;
 import android.hardware.Camera;
 import android.util.Log;
 import android.view.Surface;
@@ -16,7 +17,7 @@ import java.util.List;
  * Created by vin19 on 2017/4/30.
  */
 
-public class CameraManager {
+public class CameraManager implements Camera.PreviewCallback{
 
     public static final String TAG = "CameraManager";
     public static final boolean DEBUG = true;
@@ -30,6 +31,10 @@ public class CameraManager {
 
     private Camera.Size mCurrentPreviewSize;
     private SurfaceHolder mHolder;
+
+    private byte[] mBuffers;
+
+     OnPreviewFrameCallback mPreviewFrameCallback;
 
     private CameraManager(Context context) {
         mContext = context;
@@ -72,9 +77,15 @@ public class CameraManager {
         }
     }
 
-    public void startPreview() {
+    public void startPreview(OnPreviewFrameCallback callback) {
         if (null != mCamera) {
             mCamera.startPreview();
+            if (null == mBuffers) {
+                mBuffers = new byte[mCurrentPreviewSize.width * mCurrentPreviewSize.height * 3 / 2];
+            }
+            mCamera.addCallbackBuffer(mBuffers);
+            mCamera.setPreviewCallbackWithBuffer(this);
+            mPreviewFrameCallback = callback;
         }
     }
 
@@ -88,7 +99,7 @@ public class CameraManager {
             mCamera = openCamera(mCameraId);
         }
         initCamera(mCurrentPreviewSize.width, mCurrentPreviewSize.height,mHolder);
-        startPreview();
+        startPreview(mPreviewFrameCallback);
     }
 
     public void close() {
@@ -97,6 +108,10 @@ public class CameraManager {
             mCamera.release();
             mCamera = null;
         }
+    }
+
+    public Camera.Size getPreviewSize() {
+        return mCurrentPreviewSize;
     }
 
     private Camera openCamera(int cameraId) {
@@ -109,7 +124,6 @@ public class CameraManager {
         Camera.Size previewSize = getBestPreviewSize(parameters, width, height);
         mCurrentPreviewSize = previewSize;
         parameters.setPreviewSize(previewSize.width, previewSize.height);
-
         setCameraPreviewRotation();
         mCamera.setParameters(parameters);
     }
@@ -159,4 +173,26 @@ public class CameraManager {
         mCamera.setDisplayOrientation(result);
     }
 
+
+    boolean isFirst = true;
+    long startTime;
+    @Override
+    public void onPreviewFrame(byte[] data, Camera camera) {
+        if (isFirst) {
+            startTime = System.nanoTime();
+            if (null != mPreviewFrameCallback) {
+                mPreviewFrameCallback.onFrame(data,0);
+            }
+            isFirst = false;
+        }else {
+            if (null != mPreviewFrameCallback) {
+                mPreviewFrameCallback.onFrame(data, System.nanoTime() - startTime);
+            }
+        }
+        mCamera.addCallbackBuffer(mBuffers);
+    }
+
+    public interface OnPreviewFrameCallback {
+        void onFrame(byte[] data, long timestamp);
+    }
 }

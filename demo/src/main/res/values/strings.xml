@@ -2,4 +2,6 @@
     <string name="app_name">Demo</string>
 
     <string name="switch_camera">切换摄像头</string>
+    <string name="start_record">开始录制</string>
+    <string name="stop_record">停止录制</string>
 </resources>
