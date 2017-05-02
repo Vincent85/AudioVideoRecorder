@@ -7,7 +7,6 @@ import android.util.Log;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.WindowManager;
-import android.widget.Toast;
 
 import com.example.vin19.audiovideo.R;
 
@@ -210,16 +209,16 @@ public class CameraManager implements Camera.PreviewCallback {
     }
 
     long time;
-    boolean istimeInit = false;
+    boolean isTimeInit = false;
 
     @Override
     public void onPreviewFrame(byte[] data, Camera camera) {
         if (null != mFrameCallback) {
-            if (!istimeInit) {
+            if (!isTimeInit) {
                 time = System.nanoTime() / 1000;
-                istimeInit = true;
+                isTimeInit = true;
             }
-            if(!istimeInit) {
+            if(!isTimeInit) {
                 mFrameCallback.onFrame(data, time);
             }else {
                 mFrameCallback.onFrame(data, (System.nanoTime() - time) / 1000);

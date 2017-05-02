@@ -174,7 +174,6 @@ public class VideoEncoder implements Runnable {
      */
     public void feedData(final byte[] data, final long timeStep){
         hasNewData=true;
-        nowFeedData=data;
         nowTimeStep=timeStep;
 
 
@@ -199,7 +198,8 @@ public class VideoEncoder implements Runnable {
         }else if(mColorFormat == MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420SemiPlanar) {
             VideoUtil.NV21toYUV420SemiPlanar(rotated,temp,width,height);
         }
-        videoSourceData.add(new VideoSourceData(temp, timeStep));
+//        videoSourceData.add(new VideoSourceData(temp, timeStep));
+        nowFeedData = temp;
     }
 
     private ByteBuffer getInputBuffer(int index){
@@ -218,9 +218,6 @@ public class VideoEncoder implements Runnable {
         }
     }
 
-    byte[] colors;
-    long lastsec = 0;
-    int framecount = 0;
 
     //定时调用，如果没有新数据，就用上一个数据
     private void readOutputData(byte[] data,long timeStep) throws IOException {
@@ -229,7 +226,7 @@ public class VideoEncoder implements Runnable {
             ByteBuffer buffer=getInputBuffer(index);
             buffer.clear();
             buffer.put(data);
-            mEnc.queueInputBuffer(index,0,data.length,System.nanoTime()/1000,0);
+            mEnc.queueInputBuffer(index,0,data.length,timeStep,0);
         }
         MediaCodec.BufferInfo mInfo=new MediaCodec.BufferInfo();
         int outIndex=mEnc.dequeueOutputBuffer(mInfo,0);
@@ -315,31 +312,22 @@ public class VideoEncoder implements Runnable {
     @Override
     public void run() {
         while (mStartFlag){
-
-            try {
-                VideoSourceData data = videoSourceData.poll(50, TimeUnit.MILLISECONDS);
-                if (null==data) {
-                    continue;
-                }
+            long time=System.currentTimeMillis();
+            if(nowFeedData!=null){
                 try {
-                    readOutputData(data.data,data.timeStep);
+                    readOutputData(nowFeedData,nowTimeStep);
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
-
-            } catch (InterruptedException e) {
-                e.printStackTrace();
             }
-
-
-//            long lt= System.currentTimeMillis()-time;
-//            if(fpsTime>lt){
-//                try {
-//                    Thread.sleep(fpsTime-lt);
-//                } catch (InterruptedException e) {
-//                    e.printStackTrace();
-//                }
-//            }
+            long lt=System.currentTimeMillis()-time;
+            if(fpsTime>lt){
+                try {
+                    Thread.sleep(fpsTime-lt);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
         }
     }
 

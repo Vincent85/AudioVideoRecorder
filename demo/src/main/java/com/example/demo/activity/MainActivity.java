@@ -246,7 +246,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,Vie
                 mCameraOrientation = rotation;
 
                 isOrientationInit = true;
-                Toast.makeText(getApplicationContext(),"orientationChange rotation = " + rotation,Toast.LENGTH_LONG).show();
             }
 
             //启动预览
@@ -261,11 +260,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,Vie
                         mEncodeWidth, mEncodeHeight, mEncodeFrameRate, mEncodeBitRate, mCameraOrientation);
             }
 
-//            if (!hasSwitch && isRecording) {
-//                //获取到屏幕初始化朝向后启动录制
-//                mMediaCodecManager.prepare();
-//                mMediaCodecManager.start();
-//            }
             if (hasSwitch) {
                 mMediaCodecManager.setVideoEncoderRotation(mCameraOrientation);
             }
