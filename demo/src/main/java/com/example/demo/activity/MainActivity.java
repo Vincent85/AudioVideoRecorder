@@ -1,29 +1,33 @@
 package com.example.demo.activity;
 
 import android.app.Activity;
+import android.content.Context;
 import android.hardware.Camera;
 import android.os.Bundle;
 import android.os.Environment;
 import android.util.Log;
+import android.view.OrientationEventListener;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
+import android.view.Window;
+import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.Toast;
 
 import com.example.demo.R;
 import com.example.vin19.audiovideo.camera.CameraManager;
 import com.example.vin19.audiovideo.codec.AudioEncoder;
+import com.example.vin19.audiovideo.codec.MediaCodecManager;
 import com.example.vin19.audiovideo.codec.VideoEncoder;
 
 import java.io.File;
-import java.io.IOException;
 
 /**
  * Created by vin19 on 2017/4/30.
  */
 
-public class MainActivity extends Activity implements SurfaceHolder.Callback,View.OnClickListener,CameraManager.OnPreviewFrameCallback {
+public class MainActivity extends Activity implements SurfaceHolder.Callback,View.OnClickListener{
 
     public static final String TAG = "MainActivity";
     public static final boolean DEBUG = true;
@@ -39,15 +43,47 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,Vie
     AudioEncoder mAudioEncoder;
     VideoEncoder mVideoEncoder;
 
-    int mWidth;
-    int mHeight;
+    int mSurfaceWidth;
+    int mSurfaceHeight;
+
+    int mEncodeWidth = 1280;
+    int mEncodeHeight = 720;
+    int mEncodeFrameRate = 30;
+    int mEncodeBitRate = 2000000;
+
+
+    boolean isOrientationInit = false;
+    int mCameraOrientation = 0;
+
+    //屏幕朝向监听器
+    ScreenOrientationListener mOrientationListener;
+    //帧数据回调
+    OnFrameCallback mCallback;
+    //摄像头管理
+    CameraManager mCameraManager;
+    //编码器管理
+    MediaCodecManager mMediaCodecManager;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // 去掉标题栏
+        requestWindowFeature(Window.FEATURE_NO_TITLE);
+        // 设置全屏
+        getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
+                WindowManager.LayoutParams.FLAG_FULLSCREEN);
+
         setContentView(R.layout.main_layout);
 
         initView();
+
+        mOrientationListener = new ScreenOrientationListener(this);
+
+        mCameraManager = CameraManager.getInstance(getApplicationContext());
+        mCallback = new OnFrameCallback();
+        mCameraManager.setFrameCallback(mCallback);
+
+
     }
 
     private void initView() {
@@ -62,12 +98,12 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,Vie
         mRecordBtn = (Button) findViewById(R.id.record_btn);
         mRecordBtn.setOnClickListener(this);
     }
+
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
         if (DEBUG) {
             Log.d(TAG, "surfaceCreated");
         }
-        CameraManager.getInstance(getApplicationContext()).openCamera();
     }
 
     @Override
@@ -75,10 +111,11 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,Vie
         if (DEBUG) {
             Log.d(TAG, "surfaceChanged width = " + width + ",height = " + height);
         }
-        mWidth = width;
-        mHeight = height;
-        CameraManager.getInstance(getApplicationContext()).initCamera(width,height,mHolder);
-        CameraManager.getInstance(getApplicationContext()).startPreview(this);
+        mSurfaceWidth = width;
+        mSurfaceHeight = height;
+
+        mCameraManager.openCamera(mCameraManager.getCameraId());
+        mOrientationListener.enable();
     }
 
     @Override
@@ -86,7 +123,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,Vie
         if (DEBUG) {
             Log.d(TAG, "surfaceDestroy");
         }
-        CameraManager.getInstance(getApplicationContext()).close();
+        mOrientationListener.disable();
     }
 
     @Override
@@ -98,7 +135,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,Vie
     @Override
     public void onClick(View v) {
         if (v.getId() == R.id.switch_btn) {
-            CameraManager.getInstance(getApplicationContext()).switchCamera();
+            switchCamera();
         } else if (v.getId() == R.id.record_btn) {
             if (!isRecording) {
                 startRecord();
@@ -106,71 +143,133 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback,Vie
                 mRecordBtn.setText(getString(R.string.stop_record));
             }else {
                 stopRecord();
-                Toast.makeText(this,"stopRecording",Toast.LENGTH_LONG).show();
                 isRecording = false;
                 mRecordBtn.setText(getString(R.string.start_record));
             }
         }
     }
 
+    boolean hasSwitch = false;
+    private void switchCamera() {
+        mCameraManager.setCameraId(mCameraManager.getCameraId() == Camera.CameraInfo.CAMERA_FACING_FRONT ?
+                Camera.CameraInfo.CAMERA_FACING_BACK : Camera.CameraInfo.CAMERA_FACING_FRONT);
+        mCameraManager.stopPreview();
+        mCameraManager.releaseCamera();
+
+        isOrientationInit = false;
+        hasSwitch = true;
+        mOrientationListener.enable();
+    }
+
     private void startRecord() {
-        if (null == mAudioEncoder) {
-            mAudioEncoder = new AudioEncoder();
+//        if (null == mAudioEncoder) {
+//            mAudioEncoder = new AudioEncoder();
+//        }
+//        mAudioEncoder.setSavedPath(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES).getAbsolutePath()
+//                + File.separator + "testAudio.m4a");
+//
+//        mAudioEncoder.prepare();
+//
+//        mAudioEncoder.start();
+//
+//        if (null == mVideoEncoder) {
+//            mVideoEncoder = new VideoEncoder();
+//        }
+//        mVideoEncoder.setSavePath(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES).getAbsolutePath()
+//                + File.separator + "testVideo.mp4");
+//
+//        Camera.Size previewSize = CameraManager.getInstance(getApplicationContext()).getPreviewSize();
+//        mVideoEncoder.prepare(previewSize.width,previewSize.height);
+//        mVideoEncoder.start();
+
+        if (null == mMediaCodecManager) {
+            mMediaCodecManager = MediaCodecManager.getInstance(getApplicationContext(),
+                    mEncodeWidth, mEncodeHeight, mEncodeFrameRate, mEncodeBitRate, mCameraOrientation);
         }
-        mAudioEncoder.setSavedPath(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES).getAbsolutePath()
-                + File.separator + "testAudio.m4a");
+        mMediaCodecManager.prepare();
+        mMediaCodecManager.start();
 
-        mAudioEncoder.prepare();
-
-        mAudioEncoder.start();
-
-        if (null == mVideoEncoder) {
-            mVideoEncoder = new VideoEncoder();
-        }
-        mVideoEncoder.setSavePath(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MOVIES).getAbsolutePath()
-                + File.separator + "testVideo.mp4");
-
-        Camera.Size previewSize = CameraManager.getInstance(getApplicationContext()).getPreviewSize();
-        mVideoEncoder.prepare(previewSize.width,previewSize.height);
-        mVideoEncoder.start();
     }
 
     private void stopRecord() {
-        if (null != mAudioEncoder) {
-            mAudioEncoder.stop();
-            mAudioEncoder = null;
-        }
-
-        if (null != mVideoEncoder) {
-            mVideoEncoder.stop();
-            mVideoEncoder = null;
+        if (null != mMediaCodecManager) {
+            mMediaCodecManager.stop();
         }
     }
 
+    private void stopPreview() {
+        if (null != mCameraManager) {
+            mCameraManager.stopPreview();
+            mCameraManager.releaseCamera();
+        }
+    }
     @Override
     public void onPause() {
-        super.onPause();
         stopRecord();
+        stopPreview();
+        super.onPause();
     }
 
-//    boolean isFirst = true;
-//    long startTime;
-//    @Override
-//    public void onPreviewFrame(byte[] data, Camera camera) {
-//        if (null != mVideoEncoder) {
-//            if (isFirst) {
-//                mVideoEncoder.feedData(data,0);
-//                startTime = System.nanoTime();
-//            }else {
-//                mVideoEncoder.feedData(data,System.nanoTime() - startTime);
-//            }
-//        }
-//    }
 
-    @Override
-    public void onFrame(byte[] data, long timestamp) {
-        if (null != mVideoEncoder) {
-            mVideoEncoder.feedData(data,timestamp);
+    class OnFrameCallback implements CameraManager.CameraFrameCallback {
+
+        @Override
+        public void onFrame(byte[] data, long timestamp) {
+            mMediaCodecManager.feedData(data,timestamp);
+        }
+    }
+
+    class ScreenOrientationListener extends OrientationEventListener {
+
+        public ScreenOrientationListener(Context context) {
+            super(context);
+        }
+
+        @Override
+        public void onOrientationChanged(int orientation) {
+            if (orientation == ORIENTATION_UNKNOWN) {
+                return;
+            }
+
+            if (!isOrientationInit) {
+                Camera.CameraInfo cameraInfo = new Camera.CameraInfo();
+                Camera.getCameraInfo(mCameraManager.getCameraId(), cameraInfo);
+
+                orientation = (orientation + 45) / 90 * 90;
+                int rotation = 0;
+                if (cameraInfo.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
+                    rotation = (cameraInfo.orientation - orientation + 360) % 360;
+                } else {  // back-facing camera
+                    rotation = (cameraInfo.orientation + orientation) % 360;
+                }
+
+                mCameraOrientation = rotation;
+
+                isOrientationInit = true;
+                Toast.makeText(getApplicationContext(),"orientationChange rotation = " + rotation,Toast.LENGTH_LONG).show();
+            }
+
+            //启动预览
+            mCameraManager.initPreview(mHolder,mSurfaceWidth,mSurfaceHeight,mEncodeWidth,mEncodeHeight);
+            mCameraManager.startPreview();
+
+            if (null == mMediaCodecManager) {
+                mMediaCodecManager = MediaCodecManager.getInstance(getApplicationContext(),
+                        mEncodeWidth, mEncodeHeight, mEncodeFrameRate, mEncodeBitRate, mCameraOrientation);
+            }else {
+                mMediaCodecManager.init(getApplicationContext(),
+                        mEncodeWidth, mEncodeHeight, mEncodeFrameRate, mEncodeBitRate, mCameraOrientation);
+            }
+
+//            if (!hasSwitch && isRecording) {
+//                //获取到屏幕初始化朝向后启动录制
+//                mMediaCodecManager.prepare();
+//                mMediaCodecManager.start();
+//            }
+            if (hasSwitch) {
+                mMediaCodecManager.setVideoEncoderRotation(mCameraOrientation);
+            }
+            mOrientationListener.disable();
         }
     }
 }

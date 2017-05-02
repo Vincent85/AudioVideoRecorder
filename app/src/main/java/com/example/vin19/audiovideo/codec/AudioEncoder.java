@@ -9,160 +9,148 @@ import android.media.MediaRecorder;
 import android.os.Build;
 import android.util.Log;
 
-import java.io.FileNotFoundException;
+
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 
 /**
- * Created by vin19 on 2017/5/1.
- * 音频编码类
+ * Description:
  */
-
 public class AudioEncoder implements Runnable {
 
-    public static final String TAG = "AudioEncoder";
-    public static final boolean DEBUG = true;
+    private static final String TAG = "AudioEncoder";
+    private String mime = "audio/mp4a-latm";
+    private AudioRecord mRecorder;
+    private MediaCodec mEnc;
+    private int rate=256000;
 
-    private static final int DEQUE_TIME_OUT = 2000;
-    private MediaCodec mEncoder;
-    private AudioRecord mAudioRecorder;
+    //录音设置
+    private int sampleRate=44100;   //采样率，默认44.1k
+    private int channelCount=2;     //音频采样通道，默认2通道
+    private int channelConfig= AudioFormat.CHANNEL_IN_STEREO;        //通道设置，默认立体声
+    private int audioFormat= AudioFormat.ENCODING_PCM_16BIT;     //设置采样数据格式，默认16比特PCM
+    private FileOutputStream fos;
 
-    private String mMime = "audio/mp4a-latm";
-    private int mRate = 25600;
-    private int mSampleRate = 44100;
-    private int mChannelCount = 2;
-    private int mChannelConfig = AudioFormat.CHANNEL_IN_STEREO;
-    private int mAudioFormat = AudioFormat.ENCODING_PCM_16BIT;
-
-    private byte[] mBuffers;
-    private int mBufferSize;
-
-    private FileOutputStream mFos;
+    private byte[] buffer;
     private boolean isRecording;
-
     private Thread mThread;
-    private String mSavedPath;
+    private int bufferSize;
 
-    public AudioEncoder() {
+    private String mSavePath;
+
+    public AudioEncoder(){
 
     }
 
-    public void setMime(String mime) {
-        this.mMime = mime;
+    public void setMime(String mime){
+        this.mime=mime;
     }
 
-    public void setSampleRate(int sampleRate) {
-        this.mSampleRate = sampleRate;
+    public void setRate(int rate){
+        this.rate=rate;
     }
 
-    public void setSavedPath(String savedPath) {
-        this.mSavedPath = savedPath;
+    public void setSampleRate(int sampleRate){
+        this.sampleRate=sampleRate;
     }
 
-    public void prepare() {
-        try {
-            mFos = new FileOutputStream(mSavedPath);
-        } catch (FileNotFoundException e) {
-            Log.e(TAG, e.getLocalizedMessage());
-        }
+    public void setSavePath(String path){
+        this.mSavePath=path;
+    }
 
-        //音频编码格式相关参数设定
-        MediaFormat format = MediaFormat.createAudioFormat(mMime, mSampleRate, mChannelCount);
+    public int getSampleRate() {
+        return sampleRate;
+    }
+    public void prepare() throws IOException {
+        fos=new FileOutputStream(mSavePath);
+        //音频编码相关
+        MediaFormat format= MediaFormat.createAudioFormat(mime,sampleRate,channelCount);
         format.setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC);
-        format.setInteger(MediaFormat.KEY_BIT_RATE, mRate);
+//        format.setInteger(MediaFormat.KEY_CHANNEL_MASK, AudioFormat.CHANNEL_IN_MONO);
+        format.setInteger(MediaFormat.KEY_BIT_RATE, rate);
+        mEnc= MediaCodec.createEncoderByType(mime);
+        mEnc.configure(format,null,null, MediaCodec.CONFIGURE_FLAG_ENCODE);
 
-        try {
-            mEncoder = MediaCodec.createEncoderByType(mMime);
-        } catch (IOException e) {
-            Log.e(TAG, e.getLocalizedMessage());
-        }
-        mEncoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
-
-        //音频录制相关参数设定
-        mBufferSize = AudioRecord.getMinBufferSize(mSampleRate, mChannelConfig, mAudioFormat) * 2;
-        mBuffers = new byte[mBufferSize];
-        mAudioRecorder = new AudioRecord(MediaRecorder.AudioSource.MIC, mSampleRate,
-                mChannelConfig, mAudioFormat, mBufferSize);
+        //音频录制相关
+        bufferSize = AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat)*2;
+        buffer=new byte[bufferSize];
+        mRecorder=new AudioRecord(MediaRecorder.AudioSource.MIC,sampleRate,channelConfig,
+            audioFormat,bufferSize);
     }
 
-    public void start() {
-        mEncoder.start();
-        mAudioRecorder.startRecording();
-        if (null != mThread && mThread.isAlive()) {
-            isRecording = false;
-            try {
-                mThread.join();
-            } catch (InterruptedException e) {
-                Log.e(TAG, e.getLocalizedMessage());
-            }
+    public void start() throws InterruptedException {
+        mEnc.start();
+        mRecorder.startRecording();
+        if(mThread!=null&&mThread.isAlive()){
+            isRecording=false;
+            mThread.join();
         }
-        isRecording = true;
-        mThread = new Thread(this);
+        isRecording=true;
+        mThread=new Thread(this);
         mThread.start();
     }
 
-    public ByteBuffer getInputBuffer(int index) {
+    private ByteBuffer getInputBuffer(int index){
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            return mEncoder.getInputBuffer(index);
-        }else {
-            return mEncoder.getInputBuffers()[index];
+            return mEnc.getInputBuffer(index);
+        }else{
+            return mEnc.getInputBuffers()[index];
         }
     }
 
-    public ByteBuffer getOutputBuffer(int index) {
+    private ByteBuffer getOutputBuffer(int index){
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            return mEncoder.getOutputBuffer(index);
-        }else {
-            return mEncoder.getOutputBuffers()[index];
+            return mEnc.getOutputBuffer(index);
+        }else{
+            return mEnc.getOutputBuffers()[index];
         }
     }
 
+    //TODO Add End Flag
     private void readOutputData() throws IOException {
-        int index = mEncoder.dequeueInputBuffer(-1);
-        if (index >= 0) {
-            if (DEBUG) {
-                Log.d(TAG, "inputbuffer index = " + index);
-            }
-            final ByteBuffer buffer = getInputBuffer(index);
+        int index=mEnc.dequeueInputBuffer(-1);
+        if(index>=0){
+            final ByteBuffer buffer=getInputBuffer(index);
             buffer.clear();
-            int length = mAudioRecorder.read(buffer, mBufferSize);
-            if (length > 0) {
-                mEncoder.queueInputBuffer(index, 0, length, System.nanoTime() / 1000, 0);
-                if (DEBUG) {
-                    Log.d(TAG, "queueinputBuffer data length = " + length);
+            int length=mRecorder.read(buffer,bufferSize);
+            if(length>0){
+                //todo 有出现崩溃java.lang.IllegalStateException
+                try {
+                    mEnc.queueInputBuffer(index, 0, length, System.nanoTime() / 1000, 0);
+                } catch (Exception e) {
+                    Log.e(TAG, "queueinputbuffer index = " + index + ",length = " + length);
                 }
-            }else {
-                if (DEBUG) {
-                    Log.e(TAG, "read data length = " + length);
-                }
+            }else{
+                Log.e(TAG,"length-->"+length);
             }
         }
+        MediaCodec.BufferInfo mInfo=new MediaCodec.BufferInfo();
+        int outIndex;
+        do{
+            outIndex=mEnc.dequeueOutputBuffer(mInfo,0);
+//            Log.e("wuwang","audio flag---->"+mInfo.flags+"/"+outIndex);
+            if(outIndex>=0){
+                ByteBuffer buffer=getOutputBuffer(outIndex);
+                buffer.position(mInfo.offset);
+                byte[] temp=new byte[mInfo.size+7];
+                buffer.get(temp,7,mInfo.size);
+                addADTStoPacket(temp,temp.length);
 
-        MediaCodec.BufferInfo bufferInfo = new MediaCodec.BufferInfo();
-        int outputIndex;
-        do {
-            outputIndex = mEncoder.dequeueOutputBuffer(bufferInfo, DEQUE_TIME_OUT);
-            if (outputIndex >= 0) {
-                ByteBuffer buffer = getOutputBuffer(outputIndex);
-                buffer.position(bufferInfo.offset);
-                byte[] temp = new byte[bufferInfo.size + 7];
-                buffer.get(temp, 7, bufferInfo.size);
-                addADTStoPacket(temp, temp.length);
-                mFos.write(temp);
-                mEncoder.releaseOutputBuffer(outputIndex, false);
-                if (DEBUG) {
-                    Log.d(TAG, "mEncoder releaseOutputBuffer");
-                }
-            } else if (outputIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
+//                NativeVideoCapture.native_sendAudioStream(temp, temp.length);
 
-            } else if (outputIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
-                //todo init mediaMuxer
-                if (DEBUG) {
-                    Log.d(TAG, "INFO_OUTPUT_FORMAT_CHANGED");
+                fos.write(temp);
+                try {
+                    mEnc.releaseOutputBuffer(outIndex, false);
+                } catch (Exception e) {
+                    Log.e(TAG, "releaseOutputBuffer outIndex = " + outIndex);
                 }
+            }else if(outIndex == MediaCodec.INFO_TRY_AGAIN_LATER){
+
+            }else if(outIndex== MediaCodec.INFO_OUTPUT_FORMAT_CHANGED){
+
             }
-        } while (outputIndex >= 0);
+        }while (outIndex>=0 && isRecording);
     }
 
     /**
@@ -183,30 +171,32 @@ public class AudioEncoder implements Runnable {
         packet[6] = (byte)0xFC;
     }
 
-    public void stop() {
-        isRecording= false;
+    /**
+     * 停止录制
+     */
+    public void stop(){
         try {
+            isRecording=false;
             mThread.join();
-            mAudioRecorder.stop();
-            mEncoder.stop();
-            mEncoder.release();
-            mFos.flush();
-            mFos.close();
-        } catch (InterruptedException e) {
-            Log.e(TAG, e.getLocalizedMessage());
-        } catch (IOException e) {
+            mRecorder.stop();
+            mEnc.stop();
+            mEnc.release();
+            fos.flush();
+            fos.close();
+        } catch (Exception e){
             e.printStackTrace();
         }
     }
 
     @Override
     public void run() {
-        while (isRecording) {
+        while (isRecording){
             try {
                 readOutputData();
             } catch (IOException e) {
-                Log.e(TAG, e.getLocalizedMessage());
+                e.printStackTrace();
             }
         }
     }
+
 }
